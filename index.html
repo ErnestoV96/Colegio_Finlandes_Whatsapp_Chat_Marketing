@@ -223,14 +223,14 @@ const CONFIG = {
   BOARD_ID: '18413426463',
   PASSWORD: 'Finlandes2021',
 
-  // Nombres exactos de tus columnas en Monday (tal como las creaste)
-  COL_TELEFONO: 'Teléfono',
-  COL_ULTIMO_MSG: 'Último mensaje',
-  COL_DIRECCION: 'Dirección',
-  COL_TODOS_MSG: 'Todos los mensajes',
-  COL_ESTADO: 'Estado',
-  COL_FECHA: 'Fecha último mensaje',
-  COL_AGENTE: 'Agente',
+  // IDs exactos de columnas en Monday
+  COL_TELEFONO: 'text_mm3ce2cj',
+  COL_ULTIMO_MSG: 'long_text_mm3cvbfq',
+  COL_DIRECCION: 'color_mm3cyxnb',
+  COL_TODOS_MSG: 'long_text_mm3cs35w',
+  COL_ESTADO: 'color_mm3cpmma',
+  COL_FECHA: 'date_mm3cm5qk',
+  COL_AGENTE: 'text_mm3cekpz',
 };
 // ============================================================
 
@@ -303,11 +303,8 @@ async function loadChats() {
   }
 }
 
-function getColValue(item, colName) {
-  const col = item.column_values.find(c => {
-    const idMatch = c.id.toLowerCase().includes(colName.toLowerCase().replace(/\s+/g,'_').replace(/[áéíóú]/g, m => ({á:'a',é:'e',í:'i',ó:'o',ú:'u'})[m]));
-    return idMatch;
-  });
+function getColValue(item, colId) {
+  const col = item.column_values.find(c => c.id === colId);
   return col ? (col.text || col.label || '') : '';
 }
 
@@ -404,7 +401,7 @@ function parseMessages(raw) {
 async function updateStatus(itemId, newStatus) {
   const item = allItems.find(x => x.id === itemId);
   if (!item) return;
-  const q = `mutation { change_column_value(board_id: ${CONFIG.BOARD_ID}, item_id: ${itemId}, column_id: "estado", value: "{\\"label\\":\\"${newStatus}\\"}") { id } }`;
+  const q = `mutation { change_column_value(board_id: ${CONFIG.BOARD_ID}, item_id: ${itemId}, column_id: "${CONFIG.COL_ESTADO}", value: "{\\"label\\":\\"${newStatus}\\"}") { id } }`;
   await mondayQuery(q);
   item.estado = newStatus;
   renderList();
@@ -420,7 +417,7 @@ async function addNote(itemId) {
   const newLine = `[OUT][${time}] ${text}`;
   const updated = (item.todosMsg ? item.todosMsg + '\n' : '') + newLine;
   const escaped = updated.replace(/"/g,'\\"').replace(/\n/g,'\\n');
-  const q = `mutation { change_column_value(board_id: ${CONFIG.BOARD_ID}, item_id: ${itemId}, column_id: "todos_los_mensajes", value: "{\\"text\\":\\"${escaped}\\"}") { id } }`;
+  const q = `mutation { change_column_value(board_id: ${CONFIG.BOARD_ID}, item_id: ${itemId}, column_id: "${CONFIG.COL_TODOS_MSG}", value: "{\\"text\\":\\"${escaped}\\"}") { id } }`;
   await mondayQuery(q);
   item.todosMsg = updated;
   item.ultimoMsg = text;

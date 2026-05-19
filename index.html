@@ -216,14 +216,9 @@
 
 <script>
 // ============================================================
-// CONFIGURACIÓN — Rellena estos valores antes de subir a GitHub
+// IDs de columnas Monday (no tocar)
 // ============================================================
 const CONFIG = {
-  MONDAY_TOKEN: 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjExNjA3MTYwNiwiYWFpIjoxMSwidWlkIjoyMzA3Nzk4MywiaWFkIjoiMjAyMS0wNy0wNVQyMzoyMzo0Ni4wMDBaIiwicGVyIjoibWU6d3JpdGUiLCJhY3RpZCI6ODgxOTY4MSwicmduIjoidXNlMSJ9.-LPnI7K_AJjtbZDCBMIfXCJr2EjSrhoJyekZLHYDTiU',
-  BOARD_ID: '18413426463',
-  PASSWORD: 'Finlandes2021',
-
-  // IDs exactos de columnas en Monday
   COL_TELEFONO: 'text_mm3ce2cj',
   COL_ULTIMO_MSG: 'long_text_mm3cvbfq',
   COL_DIRECCION: 'color_mm3cyxnb',
@@ -232,80 +227,86 @@ const CONFIG = {
   COL_FECHA: 'date_mm3cm5qk',
   COL_AGENTE: 'text_mm3cekpz',
 };
-// ============================================================
+const BOARD_ID = '18413426463';
 
 let allItems = [];
 let activeFilter = '';
 let activeId = null;
 let searchVal = '';
 
-// LOGIN
-function doLogin() {
+// LOGIN — valida contra el servidor proxy
+async function doLogin() {
   const val = document.getElementById('pwInput').value;
-  if (val === CONFIG.PASSWORD) {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('app').style.display = 'flex';
-    loadChats();
-  } else {
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: val })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      loadChats();
+    } else {
+      document.getElementById('loginError').style.display = 'block';
+    }
+  } catch(e) {
     document.getElementById('loginError').style.display = 'block';
   }
 }
 
-// MONDAY API
+// MONDAY — llama al proxy local, no a Monday directamente
 async function mondayQuery(query) {
-  const res = await fetch('https://api.monday.com/v2', {
+  const res = await fetch('/api/monday', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': CONFIG.MONDAY_TOKEN,
-      'API-Version': '2024-01'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query })
   });
   return res.json();
+}
 }
 
 async function loadChats() {
   document.getElementById('chatList').innerHTML = '<div class="loading"><div class="spinner"></div>Cargando chats...</div>';
   try {
-    const q = `{ boards(ids: ${CONFIG.BOARD_ID}) { items_page(limit: 100) { items {
+    const q = `{ boards(ids: ${BOARD_ID}) { items_page(limit: 100) { items {
       id name
-      column_values {
-        id text
-        ... on StatusValue { label }
-        ... on TextValue { text }
-        ... on LongTextValue { text }
-        ... on DateValue { text }
-        ... on PeopleValue { text }
-      }
+      column_values { id text value }
     }}}}`;
     const data = await mondayQuery(q);
     const items = data?.data?.boards?.[0]?.items_page?.items || [];
-    allItems = items.map(item => {
-      const cols = {};
-      item.column_values.forEach(c => { cols[c.id] = c.text || c.label || ''; });
-      return {
-        id: item.id,
-        name: item.name,
-        telefono: getColValue(item, CONFIG.COL_TELEFONO),
-        ultimoMsg: getColValue(item, CONFIG.COL_ULTIMO_MSG),
-        direccion: getColValue(item, CONFIG.COL_DIRECCION),
-        todosMsg: getColValue(item, CONFIG.COL_TODOS_MSG),
-        estado: getColValue(item, CONFIG.COL_ESTADO) || 'Pendiente',
-        fecha: getColValue(item, CONFIG.COL_FECHA),
-        agente: getColValue(item, CONFIG.COL_AGENTE),
-        raw: item
-      };
-    });
+    allItems = items.map(item => ({
+      id: item.id,
+      name: item.name,
+      telefono: getCol(item, CONFIG.COL_TELEFONO),
+      ultimoMsg: getCol(item, CONFIG.COL_ULTIMO_MSG),
+      direccion: getCol(item, CONFIG.COL_DIRECCION),
+      todosMsg: getCol(item, CONFIG.COL_TODOS_MSG),
+      estado: getColStatus(item, CONFIG.COL_ESTADO) || 'Pendiente',
+      fecha: getCol(item, CONFIG.COL_FECHA),
+      agente: getCol(item, CONFIG.COL_AGENTE),
+      raw: item
+    }));
     renderList();
   } catch(e) {
+    console.error(e);
     document.getElementById('chatList').innerHTML = '<div class="no-results">Error al cargar. Revisa tu API Token.</div>';
   }
 }
 
-function getColValue(item, colId) {
+function getCol(item, colId) {
   const col = item.column_values.find(c => c.id === colId);
-  return col ? (col.text || col.label || '') : '';
+  return col?.text || '';
+}
+
+function getColStatus(item, colId) {
+  const col = item.column_values.find(c => c.id === colId);
+  if (!col || !col.value) return '';
+  try {
+    const v = JSON.parse(col.value);
+    return v.label?.text || v.label || col.text || '';
+  } catch(e) { return col.text || ''; }
 }
 
 function renderList() {
@@ -341,7 +342,7 @@ function openChat(id) {
   const msgs = parseMessages(c.todosMsg);
   const initials = c.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase() || '??';
   const badgeClass = 'badge badge-' + c.estado.replace(' ','.');
-  const mondayUrl = `https://monday.com/boards/${CONFIG.BOARD_ID}/pulses/${c.id}`;
+  const mondayUrl = `https://monday.com/boards/${BOARD_ID}/pulses/${c.id}`;
 
   document.getElementById('mainArea').innerHTML = `
     <div class="chat-hdr">
@@ -401,7 +402,7 @@ function parseMessages(raw) {
 async function updateStatus(itemId, newStatus) {
   const item = allItems.find(x => x.id === itemId);
   if (!item) return;
-  const q = `mutation { change_column_value(board_id: ${CONFIG.BOARD_ID}, item_id: ${itemId}, column_id: "${CONFIG.COL_ESTADO}", value: "{\\"label\\":\\"${newStatus}\\"}") { id } }`;
+  const q = `mutation { change_column_value(board_id: ${BOARD_ID}, item_id: ${itemId}, column_id: "${CONFIG.COL_ESTADO}", value: "{\\"label\\":\\"${newStatus}\\"}") { id } }`;
   await mondayQuery(q);
   item.estado = newStatus;
   renderList();
@@ -417,7 +418,7 @@ async function addNote(itemId) {
   const newLine = `[OUT][${time}] ${text}`;
   const updated = (item.todosMsg ? item.todosMsg + '\n' : '') + newLine;
   const escaped = updated.replace(/"/g,'\\"').replace(/\n/g,'\\n');
-  const q = `mutation { change_column_value(board_id: ${CONFIG.BOARD_ID}, item_id: ${itemId}, column_id: "${CONFIG.COL_TODOS_MSG}", value: "{\\"text\\":\\"${escaped}\\"}") { id } }`;
+  const q = `mutation { change_column_value(board_id: ${BOARD_ID}, item_id: ${itemId}, column_id: "${CONFIG.COL_TODOS_MSG}", value: "{\\"text\\":\\"${escaped}\\"}") { id } }`;
   await mondayQuery(q);
   item.todosMsg = updated;
   item.ultimoMsg = text;
